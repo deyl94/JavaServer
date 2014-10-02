@@ -17,7 +17,7 @@ import java.util.Locale;
 
 
 public class HttpServer {
-    private static final String DOCUMENT_ROOT = "/home/roland/Desktop/http-test-suite-master";
+    private static final String DOCUMENT_ROOT = "./";
     private static final String SERVER_NAME = "rolandiuserv!";
     private static final String INDEX_FILE = "index.html";
     private static final Integer PORT = 80;
