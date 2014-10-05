@@ -6,15 +6,11 @@ import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.URLDecoder;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.LinkedList;
 import java.util.Locale;
-
 
 public class HttpServer {
     private static final String DOCUMENT_ROOT = "./";
@@ -22,6 +18,7 @@ public class HttpServer {
     private static final String INDEX_FILE = "index.html";
     private static final Integer PORT = 80;
     private static final Integer WORKERS = 4; //Runtime.getRuntime().availableProcessors();
+    private  static final Integer PACKET_LENGTH = 8192;
 
     private static class WorkQueue {
         private final PoolWorker[] threads;
@@ -88,15 +85,24 @@ public class HttpServer {
         public void run() {
             try {
                 String header = getHeader();
-
+                if (header.isEmpty()){
+                    sendHeader(404, "", 0);
+                    socket.close();
+                    return;
+                }
                 String method = header.substring(0, header.indexOf(" "));
                 if (!method.equals("GET") && !method.equals("HEAD")){
                     sendHeader(405, "", 0);
+                    socket.close();
+                    return;
                 }
 
                 String path = DOCUMENT_ROOT + getURI(header);
                 if (path.contains("../")){
                     sendHeader(403, "", 0);
+                    socket.close();
+                    return;
+
                 } else {
 
                     path = URLDecoder.decode(path, "UTF-8");
@@ -117,9 +123,16 @@ public class HttpServer {
                             String type[] = path.split("\\.");
                             sendHeader(200, contentType(type[type.length -1]), file.length());
                             if (method.equals("GET")) {
-                                Path pathForRead = Paths.get(path);
-                                byte[] byteArray = Files.readAllBytes(pathForRead);
-                                out.write(byteArray);
+                                FileInputStream fin = new FileInputStream(file);
+                                BufferedInputStream bin = new BufferedInputStream(fin);
+                                byte[] bytes = new byte[PACKET_LENGTH];
+                                //long start = System.currentTimeMillis();
+                                int count;
+                                while ((count = bin.read(bytes)) > 0) {
+                                    out.write(bytes, 0, count);
+                                }
+                                //long finish = System.currentTimeMillis();
+                                //System.out.println("Download time:" + (finish - start));
                             }
                             out.flush();
                         }
@@ -163,7 +176,7 @@ public class HttpServer {
             StringBuilder header = new StringBuilder();
             BufferedReader reader = new BufferedReader(new InputStreamReader(in));
             String string;
-            while (!(string = reader.readLine()).isEmpty()) {
+            while ((string = reader.readLine()) != null && !string.isEmpty()) {
                 header.append(string).append(System.lineSeparator());
             }
             return header.toString();
@@ -183,14 +196,20 @@ public class HttpServer {
         private void sendHeader(int code, String contentType, long length) throws Throwable{
             DateFormat dateFormat =
                     new SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss z", Locale.ENGLISH);
-
-            String result =
-                    "HTTP/1.1 " + code + codeType(code) + "\r\n"
-                            + "Date: " + dateFormat.format(new Date()) + "\r\n"
-                            + "Server: " + SERVER_NAME + "\r\n"
-                            + "Content-Length: " + length + "\r\n"
-                            + "Content-Type: " + contentType + "\r\n"
-                            + "Connection: close\r\n\r\n";
+            String result;
+            if (code == 404 ) {
+                result = "HTTP/1.1 " + code + codeType(code) + "\r\n"
+                                + "Date: " + dateFormat.format(new Date()) + "\r\n"
+                                + "Server: " + SERVER_NAME + "\r\n"
+                                + "Connection: close\r\n\r\n";
+            } else {
+                result = "HTTP/1.1 " + code + codeType(code) + "\r\n"
+                                + "Date: " + dateFormat.format(new Date()) + "\r\n"
+                                + "Server: " + SERVER_NAME + "\r\n"
+                                + "Content-Length: " + length + "\r\n"
+                                + "Content-Type: " + contentType + "\r\n"
+                                + "Connection: close\r\n\r\n";
+            }
             out.write(result.getBytes());
         }
 
